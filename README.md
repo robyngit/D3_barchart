@@ -1,6 +1,6 @@
 
-# Option C
-## datapoints denoted by dots; gaps in data shown as dotted lines
+# Option D
+## barchart
 
 ---
 
