@@ -2,7 +2,6 @@
 <meta charset="utf-8">
 <style>
 
-
 /******************************************
 * Metric Modal Chart (Views, Downloads, Citations)
 ********************************************/
@@ -81,7 +80,7 @@
 #metric-modal .metric-chart rect.pane {
 	cursor: move; /* fallback if grab cursor is unsupported */
 	cursor: grab;
-	fill: white;
+	fill: #FAFAFA;
 	pointer-events: all;
 }
 
@@ -101,6 +100,11 @@
     stroke: #555;
 }
 
+#metric-modal .metric-chart .extent {
+	fill: #70706c;
+}
+
+/* zoom buttons */
 #metric-modal .metric-chart .scale_button {
 	cursor: pointer;
 }
@@ -109,10 +113,20 @@
 	fill: #eaeaea;
 }
 #metric-modal .metric-chart .scale_button:hover text {
-	fill: #417DD6;
+	fill: white;
 	transition: all 0.1s cubic-bezier(.25,.8,.25,1);
 }
 
+#metric-modal .metric-chart .scale_button:hover rect {
+	fill: #00AA8D;
+	transition: all 0.1s cubic-bezier(.25,.8,.25,1);
+}
+
+/* explanatory text at top */
+#metric-modal .metric-chart text#totalCount  {
+	font-size: 15px;
+	font-weight: bold;
+}
 #metric-modal .metric-chart text#displayDates  {
 	font-weight: bold;
 }
@@ -129,7 +143,8 @@
 }
 
 #metric-modal .metric-chart .bar:hover {
-	stroke: #00997e;
+	stroke: #00b798;
+	fill: #00b798;
 	stroke-width: 1px;
 	transition: stroke-width 0.06s ease-out;
 	transition: stroke 0.06s ease-out;
@@ -165,13 +180,12 @@ div.tooltip {
 
 // example data
 var metricName   = "views";
-var metricCount  = [1, 3, 1, 2, 1, 1, 1, 1, 2, 2, 3, 1, 2, 1, 4, 3, 2, 1, 1, 1, 1, 1, 4, 2, 1, 2, 8, 2, 1, 4, 2, 4, 1, 3, 1, 2, 1, 1, 3, 1, 1, 5, 1, 1, 4];
+var metricCount  = [1, 3, 1, 2, 1, 1, 1, 1, 2, 2, 3, 1, 2, 1, 4, 3, 2, 1, 1, 1, 1, 1, 4, 2, 1, 2, 1, 2, 1, 4, 2, 4, 7, 3, 1, 2, 1, 1, 3, 1, 1, 5, 1, 1, 4];
 var metricMonths = ["2018-06", "2013-04", "2015-11", "2012-10", "2014-09", "2014-02", "2016-02", "2016-04", "2016-06", "2014-12", "2013-07", "2017-01", "2015-10", "2012-12", "2013-05", "2018-04", "2015-06", "2017-03", "2014-08",
                     "2017-07", "2013-02", "2012-07", "2016-03", "2017-06", "2018-07", "2014-10", "2013-01", "2013-10", "2017-11", "2014-05", "2012-11", "2015-01", "2018-03", "2015-12", "2015-08", "2016-08", "2014-11", "2014-01",
                     "2013-06", "2012-08", "2015-09", "2016-07", "2013-03", "2012-09", "2016-05"];
 var optwidth        = 600;
 var optheight       = 370;
-
 
 /*
 * ========================================================================
@@ -200,6 +214,29 @@ dataset.sort(function(x, y){
    return d3.ascending(x.month, y.month);
 });
 
+
+// ======= find missing data: make an array of months that are missing dataset
+
+// change dates to milliseconds
+metricMonths.forEach(function(part, index, theArray) {
+  theArray[index] = d3.time.format("%Y-%m").parse(part).getTime();
+});
+
+// get a list of all months in the range of data
+var monthArray = d3.time.scale()
+                .domain(d3.extent(metricMonths))
+                .ticks(d3.time.months, 1);
+
+// check if there is data for each month in monthArray, if so append count, otherwise append null
+var missing_data = [];
+for(var i=0; i<monthArray.length; i++){
+	// if no match for month in dataset
+	if (metricMonths.indexOf(monthArray[i].getTime()) == -1) {
+		// add month to missing_data
+		missing_data.push({month: monthArray[i]});
+	}
+};
+
 /*
 * ========================================================================
 *  sizing
@@ -208,13 +245,13 @@ dataset.sort(function(x, y){
 
 /* === Focus chart === */
 
-var margin	= {top: 20, right: 30, bottom: 100, left: 20},
+var margin	= {top: 30, right: 30, bottom: 95, left: 20},
     width	= optwidth - margin.left - margin.right,
     height	= optheight - margin.top - margin.bottom;
 
 /* === Context chart === */
 
-var margin_context = {top: 320, right: 30, bottom: 20, left: 20},
+var margin_context = {top: 315, right: 30, bottom: 20, left: 20},
     height_context = optheight - margin_context.top - margin_context.bottom;
 
 /*
@@ -223,8 +260,13 @@ var margin_context = {top: 320, right: 30, bottom: 20, left: 20},
 * ========================================================================
 */
 
-// the date range of available data:
-var dataXrange = d3.extent(dataset, function(d) { return d.month; });
+var day_in_ms = 86400000;
+
+// add about a month to the end of the x range to show the last bar (which starts on the first of the month)
+var dataXrange = d3.extent(dataset, function(d) { return d.month; });//,
+	new_max_date = new Date(dataXrange[1].getTime() + (day_in_ms * 27)),
+	dataXrange = [dataXrange[0], new_max_date];
+
 var dataYrange = [0, d3.max(dataset, function(d) { return d.count; })];
 
 // maximum date range allowed to display
@@ -243,7 +285,7 @@ var x = d3.time.scale()
 // to automatially calculate the width of columns of column chart
 // for details, see: https://stackoverflow.com/questions/12186366/d3-js-evenly-spaced-bars-on-a-time-scale
 var x_ordinal = d3.scale.ordinal()
-	.rangeBands([0, width], .6)
+	.rangeBands([0, width], 0, 25)
     .domain(dataset.map(function(d){ return d.month}));
 
 var y = d3.scale.linear()
@@ -257,24 +299,10 @@ var xAxis = d3.svg.axis()
     .ticks(customTickFunction)
 	.tickFormat(format_months);
 
-function format_months(d){
-
-	var test = (x.domain()[1] - x.domain()[0]) > 132167493818;
-
-	//console.log(test);
-
-	if(d.getMonth()==0 & test){//if january
-		var yearOnly = d3.time.format("%Y");
-		return(yearOnly(d));
-	} else {
-		return(DateFormat(d))
-	}
-}
-
-
 var yAxis = d3.svg.axis()
 	.scale(y)
     .ticks(4)
+	.tickFormat(d3.format("d"))
     .tickSize(-(width))
 	.orient("right");
 
@@ -285,7 +313,7 @@ var x_context = d3.time.scale()
     .domain([mindate, maxdate]);
 
 var x_context_ordinal = d3.scale.ordinal()
-	.rangeBands([0, width], .6)
+	.rangeBands([0, width], 0, 35)
     .domain(dataset.map(function(d){ return d.month}));
 
 var y_context = d3.scale.linear()
@@ -333,6 +361,7 @@ vis.append("defs").append("clipPath")
     .attr("height", height);
     // clipPath is used to keep elements from moving outside of plot area when user zooms/scrolls/brushes
 
+
 var pane = vis.append("svg:rect")
     .attr("class", "pane")
     .attr("width", width)
@@ -352,30 +381,27 @@ pane.call(zoom)
 
 // === current date range text & zoom buttons === //
 
-var display_range_group = vis.append("g")
+var expl_text = vis.append("g")
     .attr("id", "buttons_group")
     .attr("transform", "translate(" + 0 + ","+ 0 +")");
 
-var expl_text = display_range_group.append("text")
-    .text("Showing data from: ")
+expl_text.append("text")
+	.attr("id", "totalCount")
     .style("text-anchor", "start")
-    .attr("transform", "translate(" + 0 + ","+ 10 +")");
+    .attr("transform", "translate(" + 18 + ","+ 11 +")");
 
-display_range_group.append("text")
+expl_text.append("text")
     .attr("id", "displayDates")
-    .text(DateFormat(dataXrange[0]) + " - " + DateFormat(dataXrange[1]))
     .style("text-anchor", "start")
-    .attr("transform", "translate(" + 82 + ","+ 10 +")");
+    .attr("transform", "translate(" + 20 + ","+ 22 +")");
 
-var expl_text = display_range_group.append("text")
-    .text("Zoom to: ")
-    .style("text-anchor", "start")
-    .attr("transform", "translate(" + 180 + ","+ 10 +")");
+updateDisplayDates();
 
 // === the zooming/scaling buttons === //
 
 var button_width = 40;
 var button_height = 14;
+var button_padding = 10;
 
 // don't show year button if < 1 year of data
 var dateRange  = dataXrange[1] - dataXrange[0],
@@ -384,14 +410,23 @@ var dateRange  = dataXrange[1] - dataXrange[0],
 if (dateRange < ms_in_year)   {
     var button_data =["month","data"];
 } else {
-    var button_data =["year","month","data"];
+   var button_data =["year","month","data"];
 };
 
-var button = display_range_group.selectAll("g")
+var button_count = button_data.length -1;
+var button_g_width = button_count*button_width + button_count*button_padding + margin.right - button_padding;
+
+// ================
+expl_text.append("text")
+    .text("Zoom to")
+    .style("text-anchor", "start")
+    .attr("transform", "translate(" + (width - button_g_width - 45) + ","+ 14 +")");
+
+var button = expl_text.selectAll("g")
     .data(button_data)
     .enter().append("g")
     .attr("class", "scale_button")
-    .attr("transform", function(d, i) { return "translate(" + (220 + i*button_width + i*10) + ",0)"; })
+    .attr("transform", function(d, i) { return "translate(" + ((width - button_g_width) + i*button_width + i*button_padding) + ",4)"; })
     .on("click", scaleDate);
 
 button.append("rect")
@@ -419,6 +454,17 @@ focus.append("g")
     .attr("transform", "translate(0," + height + ")")
     .call(xAxis);
 
+// MISSING DATA
+// focus.selectAll(".missing_data")
+// 	.data(missing_data)
+// 	.enter().append("rect")
+// 	  		.attr("class", "missing_rect")
+// 	  		.attr("x", function (d) {return x(d.month);})
+// 	  		.attr("y", y(7))
+// 	  		.attr("height", y(-0.1)-y(7))
+// 	  		.attr("width", x_ordinal.rangeBand()+2)
+// 			.attr("fill", "white");
+
 focus.selectAll(".bars")
 	.data(dataset)
 	.enter().append("rect")
@@ -428,25 +474,24 @@ focus.selectAll(".bars")
 	  		.attr("height", 0)
 	  		.attr("width", x_ordinal.rangeBand())
 			.on("mouseover", function(d) {show_tooltip(d)} )
-			.on("mouseout", function(d) {hide_tooltip(d)} );
-	  	//	.attr("id", function (d) {	  			return d["year"];	  		});
+			.on("mouseout", function(d) {hide_tooltip(d)} )
+			.style("opacity", 0);
 
 // animate! :)
 focus.selectAll(".bar")
 	.transition()
-	.duration(800)
-	.ease("cubic")
+	.duration(450)
+	.ease("elastic", 1.03, 0.98)
 	.delay(function(d, i) {
-
-		var maxdelay = 500;
-		var z = ((i) / (dataset.length)) * maxdelay;
-		var number = z;
-		console.log(number)
-
-		return number;
+		var max_delay = 600;
+		var z = i / (dataset.length-1);
+		var line_z =  z * max_delay * 0.4;
+		var log_z = Math.log2(z + 1) * max_delay * 0.6;
+		return(250+line_z + log_z);
 	})
 	.attr("y", function (d) {return y(d.count);	  		})
-	.attr("height", function (d) {return y(0) - y(d.count);	  		});
+	.attr("height", function (d) {return y(0) - y(d.count);	  		})
+	.style("opacity", 1);
 
 /* === tooltip === */
 var div = d3.select("#metric-modal").append("div")
@@ -460,10 +505,26 @@ context.selectAll(".contextbars")
 	.enter().append("rect")
 	  		.attr("class", "contextbar")
 	  		.attr("x", function (d) {return x_context(d.month);	  		})
-	  		.attr("y", function (d) {return y_context(d.count);	  		})
-	  		.attr("height", function (d) {return y_context(0) - y_context(d.count);	  		})
-	  		.attr("width", x_context_ordinal.rangeBand());
+	  		.attr("y", height_context)
+	  		.attr("height", 0)
+	  		.attr("width", x_context_ordinal.rangeBand())
+			.style("opacity", 0);
 
+// animate! :)
+context.selectAll(".contextbar")
+	.transition()
+	.duration(450)
+	.ease("elastic", 1.03, 0.98)
+	.delay(function(d, i) {
+		var max_delay = 600;
+		var z = i / (dataset.length-1);
+		var line_z =  z * max_delay * 0.4;
+		var log_z = Math.log2(z + 1) * max_delay * 0.6;
+		return(line_z + log_z);
+	})
+	.attr("y", function (d) {return y_context(d.count);	  		})
+	.attr("height", function (d) {return y_context(0) - y_context(d.count);	  		})
+	.style("opacity", 1);
 
 context.append("g")
     .attr("class", "x axis")
@@ -506,7 +567,7 @@ brushg.selectAll(".resize")
 vis.append("text")
     .attr("class", "y axis title")
     .text("Monthly " + this.metricName)
-    .attr("x", (-(height/2)))
+    .attr("x", (-((height+margin.top+margin.bottom-50)/2)))
     .attr("y", 0)
     .attr("dy", "1em")
     .attr("transform", "rotate(-90)")
@@ -524,8 +585,6 @@ zoom.x(x);
 // === tick/date formatting functions ===
 
 function customTickFunction(t0, t1, dt)  {
-
-	var day_in_ms = 86400000;
 
     var labelSize = 45; //
     var maxTotalLabels = Math.floor(width / labelSize);
@@ -551,23 +610,43 @@ function customTickFunction(t0, t1, dt)  {
     return times;
 };
 
+function format_months(d){
+
+	var test = (x.domain()[1] - x.domain()[0]) > 132167493818;
+
+	if(d.getMonth()==0 & test){//if january
+		var yearOnly = d3.time.format("%Y");
+		return(yearOnly(d));
+	} else {
+		return(DateFormat(d))
+	}
+}
+
 // === tooltip functions === //
 // from: http://bl.ocks.org/d3noob/a22c42db65eb00d4e369
 
 function show_tooltip(d) {
 
+	// remove s from metric name if count is 1
 	if (d.count == 1) {
 		var metricName_point = metricName.slice(0, -1);
 	} else {
 		var metricName_point = metricName;
 	}
 
+	// custom zoom scale needed to calculate width of bars with zoom/brush.
+	// can't use zoom.scale() because this needs to be reset (to one) when using brushed()
+	var x_current_width = x.domain()[1] - x.domain()[0],
+		x_total_width = dataXrange[1] - dataXrange[0],
+		custom_zoom_scale = x_total_width/x_current_width;
+
     div.transition()
 		.duration(60)
         .style("opacity", 0.98);
+
     div.html("<b>" + DateFormat(d.month) + "</b><br/>"  + d.count + " " + metricName_point)
-        .style("left", (d3.event.pageX -30) + "px")//(d3.event.pageX) + "px"
-        .style("top", (d3.event.pageY -40) + "px");//(d3.event.pageY - 28) + "px"
+        .style("left", (x(d.month) + 57 + (x_ordinal.rangeBand() * 0.5 * custom_zoom_scale)) + "px")
+		.style("top", (y(d.count)+68) + "px");
     };
 
 function hide_tooltip(d) {
@@ -606,20 +685,18 @@ function common_behaviour() {
 		x_total_width = dataXrange[1] - dataXrange[0],
 		custom_zoom_scale = x_total_width/x_current_width;
 
-	// subset data by current x.domain:
-	// var bisectDate = d3.bisector(function(d) { return d.month; }).right;
-	// var iL = bisectDate(dataset, x.domain()[0]);//xleft);
-	// var iR = bisectDate(dataset, x.domain()[1]) + 1;
-	// var dataSubset = dataset.slice(iL,iR);
+	// given bar width, date range should switch to next month on the 24th.
+	var left_date = x.domain()[0];
+	if(left_date.getDate() < 24){
+		var left_date = d3.time.month.floor(left_date),
+			left_date = new Date(left_date.getTime())
+	};
 
-	// the subset of the data in focus:
 	var dataSubset = dataset.filter( function(d) {
-		return d.month <= x.domain()[1] && d.month >= x.domain()[0]
+		return d.month <= x.domain()[1] && d.month >= left_date
 	});
-	// the minimum needs to be x.domain()[1] minus one month (because width of bar is approx one month)
 
 	var yMaxFocus = d3.max(dataSubset, function(d) { return d.count; }) || 1;
-
 
 	// reset and redraw the other axes
 	y.domain([0, yMaxFocus]);
@@ -647,13 +724,41 @@ function brushend() {
 function updateDisplayDates() {
 
     var b = brush.extent();
+
+	// given bar width, date range should switch to next month on the 24th.
+	if(b[0].getDate() >= 24){
+		var left_date = d3.time.month.ceil(b[0]),
+			left_date = new Date(left_date.getTime())
+	} else {
+		left_date = d3.time.month.floor(b[0])
+	}
+
     // update the text that shows the range of displayed dates
-    var localBrushDateStart = (brush.empty()) ? DateFormat(dataXrange[0]) : DateFormat(b[0]),
-        localBrushDateEnd   = (brush.empty()) ? DateFormat(dataXrange[1]) : DateFormat(b[1]);
+    var start_month = (brush.empty()) ? DateFormat(dataXrange[0]) : DateFormat(left_date),
+        end_month   = (brush.empty()) ? DateFormat(dataXrange[1]) : DateFormat(b[1]);
+
+	var dataSubset = dataset.filter( function(d) {
+		return d.month <= DateFormat.parse(end_month) && d.month >= left_date
+	});
+
+	var total_count = 0;
+        for (var i = 0; i < dataSubset.length; i++) {
+            total_count += dataSubset[i].count;
+    }
 
     // Update start and end dates in upper right-hand corner
     d3.select("#displayDates")
-        .text(localBrushDateStart == localBrushDateEnd ? localBrushDateStart : localBrushDateStart + " - " + localBrushDateEnd);
+        .text(start_month == end_month ? "in " + start_month : "from " + start_month + " to " + end_month);
+
+	d3.select("#totalCount")
+		.text(total_count + " " + this.metricName);
+
+	// Fade all years in the bar chart not within the brush
+    context.selectAll(".contextbar")
+		.style("opacity", function(d, i) {
+      		return  d.month <= DateFormat.parse(end_month) && d.month >= left_date || brush.empty() ? "1" : ".3";
+    });
+
 };
 
 function moveInBounds(b) {
